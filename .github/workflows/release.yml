@@ -1,0 +1,115 @@
+name: Build & Release
+
+# Build for Windows, macOS and Linux and publish the artifacts to a GitHub
+# Release. Runs only when main is updated.
+on:
+  push:
+    branches: [main]
+
+# Needed so the release job can create/update releases.
+permissions:
+  contents: write
+
+jobs:
+  # Read the app version from pubspec.yaml once and share it with the other jobs.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: get
+        run: |
+          version=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d'+' -f1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $version"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Linux desktop build dependencies.
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev clang cmake pkg-config liblzma-dev
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build ${{ matrix.platform }}
+        run: flutter build ${{ matrix.platform }} --release
+
+      # --- Package each platform into a single archive under dist/ ---
+
+      - name: Package (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release/* `
+            -DestinationPath "dist/sgfscrcpy-windows-v${{ needs.version.outputs.version }}.zip"
+
+      - name: Package (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          mkdir -p dist
+          cd build/macos/Build/Products/Release
+          app=$(ls -d *.app | head -1)
+          zip -r -y "$GITHUB_WORKSPACE/dist/sgfscrcpy-macos-v${{ needs.version.outputs.version }}.zip" "$app"
+
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          mkdir -p dist
+          cd build/linux/x64/release/bundle
+          tar -czf "$GITHUB_WORKSPACE/dist/sgfscrcpy-linux-v${{ needs.version.outputs.version }}.tar.gz" .
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sgfscrcpy-${{ matrix.platform }}
+          path: dist/*
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: SgfScrcpy v${{ needs.version.outputs.version }}
+          body: |
+            Automated build of SgfScrcpy v${{ needs.version.outputs.version }}.
+
+            **Downloads**
+            - Windows: `sgfscrcpy-windows-*.zip`
+            - macOS: `sgfscrcpy-macos-*.zip`
+            - Linux: `sgfscrcpy-linux-*.tar.gz`
+          files: artifacts/**/*
+          make_latest: true
+          fail_on_unmatched_files: true
