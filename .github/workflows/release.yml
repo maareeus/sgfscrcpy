@@ -58,30 +58,67 @@ jobs:
       - name: Build ${{ matrix.platform }}
         run: flutter build ${{ matrix.platform }} --release
 
-      # --- Package each platform into a single archive under dist/ ---
+      # --- Package each platform into a standalone installer/executable ---
 
-      - name: Package (Windows)
+      # Windows: build an installer .exe with Inno Setup.
+      - name: Build Windows installer
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          choco install innosetup --no-progress -y
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path build/windows/x64/runner/Release/* `
-            -DestinationPath "dist/sgfscrcpy-windows-v${{ needs.version.outputs.version }}.zip"
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyVersion=${{ needs.version.outputs.version }}" "/DMyRoot=$(Get-Location)" windows\sgfscrcpy.iss
 
-      - name: Package (macOS)
+      # macOS: build a .dmg with a drag-to-Applications shortcut.
+      - name: Build macOS DMG
         if: matrix.platform == 'macos'
         run: |
-          mkdir -p dist
-          cd build/macos/Build/Products/Release
-          app=$(ls -d *.app | head -1)
-          zip -r -y "$GITHUB_WORKSPACE/dist/sgfscrcpy-macos-v${{ needs.version.outputs.version }}.zip" "$app"
+          brew install create-dmg
+          mkdir -p dist dmgsrc
+          app=$(ls -d build/macos/Build/Products/Release/*.app | head -1)
+          cp -R "$app" dmgsrc/
+          create-dmg \
+            --volname "SgfScrcpy" \
+            --window-size 600 320 \
+            --icon-size 120 \
+            --icon "$(basename "$app")" 160 160 \
+            --app-drop-link 440 160 \
+            "dist/sgfscrcpy-macos-v${{ needs.version.outputs.version }}.dmg" \
+            "dmgsrc" || true
+          # create-dmg can exit non-zero even on success; verify the file exists.
+          ls -la dist/*.dmg
 
-      - name: Package (Linux)
+      # Linux: build a single-file AppImage.
+      - name: Build Linux AppImage
         if: matrix.platform == 'linux'
+        env:
+          ARCH: x86_64
+          APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
-          mkdir -p dist
-          cd build/linux/x64/release/bundle
-          tar -czf "$GITHUB_WORKSPACE/dist/sgfscrcpy-linux-v${{ needs.version.outputs.version }}.tar.gz" .
+          sudo apt-get install -y imagemagick
+          mkdir -p dist AppDir/usr/bin
+          cp -r build/linux/x64/release/bundle/* AppDir/usr/bin/
+          # Minimal launcher, desktop entry and icon required by AppImage.
+          cat > AppDir/AppRun <<'SH'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/sgf_scrcpy" "$@"
+          SH
+          chmod +x AppDir/AppRun
+          cat > AppDir/sgfscrcpy.desktop <<'DESKTOP'
+          [Desktop Entry]
+          Type=Application
+          Name=SgfScrcpy
+          Exec=sgf_scrcpy
+          Icon=sgfscrcpy
+          Categories=Utility;
+          DESKTOP
+          convert -size 256x256 xc:'#6C5CE7' AppDir/sgfscrcpy.png
+          cp AppDir/sgfscrcpy.png AppDir/.DirIcon
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage AppDir "dist/sgfscrcpy-linux-v${{ needs.version.outputs.version }}.AppImage"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -107,9 +144,9 @@ jobs:
             Automated build of SgfScrcpy v${{ needs.version.outputs.version }}.
 
             **Downloads**
-            - Windows: `sgfscrcpy-windows-*.zip`
-            - macOS: `sgfscrcpy-macos-*.zip`
-            - Linux: `sgfscrcpy-linux-*.tar.gz`
+            - Windows: `sgfscrcpy-windows-setup-*.exe` (installer)
+            - macOS: `sgfscrcpy-macos-*.dmg` (drag to Applications)
+            - Linux: `sgfscrcpy-linux-*.AppImage` (`chmod +x` then run)
           files: artifacts/**/*
           make_latest: true
           fail_on_unmatched_files: true
