@@ -4,7 +4,7 @@
 
 **Simple GUI for Scrcpy** — a modern, minimal desktop UI to mirror your Android devices.
 
-[![Version](https://img.shields.io/badge/version-0.0.1-6C5CE7.svg)](https://github.com/MattiaMalacarne/SgfScrcpy/releases)
+[![Version](https://img.shields.io/badge/version-0.0.1-6C5CE7.svg)](https://github.com/maareeus/sgfscrcpy/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-informational.svg)](#requirements)
 [![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
