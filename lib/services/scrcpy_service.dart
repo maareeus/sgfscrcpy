@@ -216,6 +216,32 @@ class ScrcpyService {
     return devices;
   }
 
+  /// Lists installed package names on [serial] via `adb shell pm list packages`.
+  /// When [thirdPartyOnly] is true, system apps are excluded (`-3`).
+  Future<List<String>> listPackages(
+    String serial, {
+    bool thirdPartyOnly = true,
+  }) async {
+    final args = ['-s', serial, 'shell', 'pm', 'list', 'packages'];
+    if (thirdPartyOnly) args.add('-3');
+    final result = await _run('adb', args);
+    if (result.exitCode != 0) {
+      throw ScrcpyException(
+        'Failed to list packages.',
+        details: result.stderr.toString().trim(),
+      );
+    }
+    final packages = <String>[];
+    for (final line in result.stdout.toString().split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.startsWith('package:')) {
+        packages.add(trimmed.substring('package:'.length).trim());
+      }
+    }
+    packages.sort();
+    return packages;
+  }
+
   /// Launches scrcpy for [device] as a detached process (no console window,
   /// survives GUI close). Returns the OS process id so the caller can track
   /// and later stop the session. Throws [ScrcpyException] on failure.

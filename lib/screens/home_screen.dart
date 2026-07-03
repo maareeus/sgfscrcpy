@@ -229,6 +229,8 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) => LaunchOptionsDialog(
         device: device,
         initial: _lastOptions[device.serial] ?? MirrorOptions.defaults,
+        onListPackages: (thirdPartyOnly) =>
+            _service.listPackages(device.serial, thirdPartyOnly: thirdPartyOnly),
       ),
     );
     if (options == null) return; // cancelled

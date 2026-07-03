@@ -9,10 +9,14 @@ class LaunchOptionsDialog extends StatefulWidget {
   final Device device;
   final MirrorOptions initial;
 
+  /// Fetches installed packages for the device (thirdPartyOnly toggle).
+  final Future<List<String>> Function(bool thirdPartyOnly) onListPackages;
+
   const LaunchOptionsDialog({
     super.key,
     required this.device,
     required this.initial,
+    required this.onListPackages,
   });
 
   @override
@@ -40,6 +44,16 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
     _dpiController.dispose();
     _startAppController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickApp() async {
+    final pkg = await showDialog<String>(
+      context: context,
+      builder: (_) => _PackagePickerDialog(onList: widget.onListPackages),
+    );
+    if (pkg != null && mounted) {
+      setState(() => _startAppController.text = pkg);
+    }
   }
 
   void _start() {
@@ -168,10 +182,22 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                _textField(
-                  _startAppController,
-                  'Launch app (package)',
-                  'e.g. com.android.chrome',
+                Row(
+                  children: [
+                    Expanded(
+                      child: _textField(
+                        _startAppController,
+                        'Launch app (package)',
+                        'e.g. com.android.chrome',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      onPressed: _pickApp,
+                      tooltip: 'Pick installed app',
+                      icon: const Icon(Icons.apps),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -261,6 +287,147 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
         isDense: true,
         border: const OutlineInputBorder(),
       ),
+    );
+  }
+}
+
+/// A searchable list of installed packages, returning the chosen one.
+class _PackagePickerDialog extends StatefulWidget {
+  final Future<List<String>> Function(bool thirdPartyOnly) onList;
+
+  const _PackagePickerDialog({required this.onList});
+
+  @override
+  State<_PackagePickerDialog> createState() => _PackagePickerDialogState();
+}
+
+class _PackagePickerDialogState extends State<_PackagePickerDialog> {
+  final _searchController = TextEditingController();
+  bool _loading = true;
+  bool _thirdPartyOnly = true;
+  String? _error;
+  List<String> _all = [];
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final list = await widget.onList(_thirdPartyOnly);
+      if (!mounted) return;
+      setState(() {
+        _all = list;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _query.isEmpty
+        ? _all
+        : _all.where((p) => p.toLowerCase().contains(_query)).toList();
+
+    return AlertDialog(
+      title: const Text('Pick an app'),
+      content: SizedBox(
+        width: 460,
+        height: 460,
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Filter packages…',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+            ),
+            Row(
+              children: [
+                Switch(
+                  value: _thirdPartyOnly,
+                  onChanged: _loading
+                      ? null
+                      : (v) {
+                          setState(() => _thirdPartyOnly = v);
+                          _load();
+                        },
+                ),
+                const Text('User apps only'),
+                const Spacer(),
+                if (!_loading)
+                  Text(
+                    '${filtered.length}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Expanded(child: _buildList(filtered)),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildList(List<String> filtered) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_error!, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            OutlinedButton(onPressed: _load, child: const Text('Retry')),
+          ],
+        ),
+      );
+    }
+    if (filtered.isEmpty) {
+      return const Center(child: Text('No packages found'));
+    }
+    return ListView.builder(
+      itemCount: filtered.length,
+      itemBuilder: (_, i) {
+        final pkg = filtered[i];
+        return ListTile(
+          dense: true,
+          leading: const Icon(Icons.android, size: 20),
+          title: Text(pkg, style: const TextStyle(fontSize: 13)),
+          onTap: () => Navigator.of(context).pop(pkg),
+        );
+      },
     );
   }
 }
