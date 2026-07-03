@@ -56,18 +56,18 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
     }
   }
 
-  /// Applies a tablet-friendly virtual display: 1080p at 240 DPI (≈720dp wide,
+  /// Applies a tablet-friendly virtual display: 1080p at 180 DPI (≈960dp wide,
   /// which triggers large-screen/two-pane layouts) with a UHID keyboard.
   void _applyTabletPreset() {
     setState(() {
       _o = _o.copyWith(
         virtualDisplay: true,
         virtualDisplayResolution: '1920x1080',
-        virtualDisplayDpi: 240,
+        virtualDisplayDpi: 180,
         keyboardMode: 'uhid',
       );
       _resolutionController.text = '1920x1080';
-      _dpiController.text = '240';
+      _dpiController.text = '180';
     });
   }
 
@@ -200,7 +200,7 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
                 alignment: Alignment.centerLeft,
                 child: ActionChip(
                   avatar: const Icon(Icons.tablet_mac, size: 18),
-                  label: const Text('Tablet preset (1080p · 240dpi)'),
+                  label: const Text('Tablet preset (1080p · 180dpi)'),
                   onPressed: _applyTabletPreset,
                 ),
               ),
