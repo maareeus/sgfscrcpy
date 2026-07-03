@@ -11,6 +11,10 @@ class MirrorOptions {
   final bool turnScreenOff;
   final bool showTouches;
 
+  /// scrcpy keyboard mode: null (default/sdk), 'uhid', 'aoa', 'disabled'.
+  /// 'uhid' is required for reliable typing on a virtual display.
+  final String? keyboardMode;
+
   // Audio (scrcpy forwards audio by default on Android 11+)
   final bool audioEnabled;
 
@@ -31,6 +35,7 @@ class MirrorOptions {
     this.stayAwake = false,
     this.turnScreenOff = false,
     this.showTouches = false,
+    this.keyboardMode,
     this.audioEnabled = true,
     this.recordPath,
     this.virtualDisplay = false,
@@ -52,6 +57,8 @@ class MirrorOptions {
     bool? stayAwake,
     bool? turnScreenOff,
     bool? showTouches,
+    String? keyboardMode,
+    bool clearKeyboardMode = false,
     bool? audioEnabled,
     String? recordPath,
     bool clearRecordPath = false,
@@ -72,6 +79,8 @@ class MirrorOptions {
       stayAwake: stayAwake ?? this.stayAwake,
       turnScreenOff: turnScreenOff ?? this.turnScreenOff,
       showTouches: showTouches ?? this.showTouches,
+      keyboardMode:
+          clearKeyboardMode ? null : (keyboardMode ?? this.keyboardMode),
       audioEnabled: audioEnabled ?? this.audioEnabled,
       recordPath: clearRecordPath ? null : (recordPath ?? this.recordPath),
       virtualDisplay: virtualDisplay ?? this.virtualDisplay,
@@ -98,6 +107,9 @@ class MirrorOptions {
     if (stayAwake) args.add('--stay-awake');
     if (turnScreenOff) args.add('--turn-screen-off');
     if (showTouches) args.add('--show-touches');
+    if (keyboardMode != null && keyboardMode!.isNotEmpty) {
+      args.add('--keyboard=$keyboardMode');
+    }
     if (!audioEnabled) args.add('--no-audio');
 
     if (recordPath != null && recordPath!.isNotEmpty) {
@@ -112,7 +124,11 @@ class MirrorOptions {
       final v = value.toString();
       args.add(v.isEmpty ? '--new-display' : '--new-display=$v');
       if (startAppPackage != null && startAppPackage!.trim().isNotEmpty) {
-        args.add('--start-app=${startAppPackage!.trim()}');
+        final pkg = startAppPackage!.trim();
+        args.add('--start-app=$pkg');
+        // scrcpy can't show the app's icon, but we can at least title the
+        // window/taskbar entry with the package name.
+        args.addAll(['--window-title', pkg]);
       }
     }
 

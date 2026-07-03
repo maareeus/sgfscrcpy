@@ -152,6 +152,26 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
                   (v) => setState(() => _o = _o.copyWith(showTouches: v))),
               _switch('Forward audio', _o.audioEnabled,
                   (v) => setState(() => _o = _o.copyWith(audioEnabled: v))),
+              _dropdown<String?>(
+                label: 'Keyboard',
+                value: _o.keyboardMode,
+                items: const {
+                  null: 'Default (SDK)',
+                  'uhid': 'Physical (UHID)',
+                  'aoa': 'Physical (AOA)',
+                  'disabled': 'Disabled',
+                },
+                onChanged: (v) => setState(() => _o = _o.copyWith(
+                      keyboardMode: v,
+                      clearKeyboardMode: v == null,
+                    )),
+              ),
+              Text(
+                'Use UHID for reliable typing on a virtual display.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+              ),
               const SizedBox(height: 8),
               _sectionLabel(theme, 'Virtual display'),
               Text(
@@ -160,8 +180,20 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
                   color: Colors.white.withValues(alpha: 0.45),
                 ),
               ),
-              _switch('Enable virtual display', _o.virtualDisplay,
-                  (v) => setState(() => _o = _o.copyWith(virtualDisplay: v))),
+              _switch(
+                'Enable virtual display',
+                _o.virtualDisplay,
+                (v) => setState(() {
+                  // Default to UHID keyboard when turning on a virtual display,
+                  // since the SDK keyboard often fails to type there.
+                  _o = _o.copyWith(
+                    virtualDisplay: v,
+                    keyboardMode: v && _o.keyboardMode == null
+                        ? 'uhid'
+                        : _o.keyboardMode,
+                  );
+                }),
+              ),
               if (_o.virtualDisplay) ...[
                 const SizedBox(height: 4),
                 Row(
