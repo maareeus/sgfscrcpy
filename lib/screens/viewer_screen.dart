@@ -1,17 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../models/device.dart';
 import '../models/mirror_options.dart';
+import '../services/live_stream_server.dart';
 import '../services/scrcpy_server_client.dart';
 import '../services/scrcpy_service.dart';
 
-/// In-app viewer (Phase 1 — diagnostic).
+/// In-app viewer (Phase 2): decodes and renders the mirror inside our window.
 ///
-/// Connects to scrcpy-server and shows live stream info and throughput. Video
-/// decoding/rendering is the next phase; for now this proves the pipeline works
-/// so the mirror can eventually live inside our own window (custom icon/UI).
+/// The scrcpy stream is demuxed by [ScrcpyServerClient], re-served locally by
+/// [LiveStreamServer], and decoded/rendered by mpv (media_kit).
 class ViewerScreen extends StatefulWidget {
   final ScrcpyService service;
   final Device device;
@@ -31,40 +33,28 @@ class ViewerScreen extends StatefulWidget {
 }
 
 class _ViewerScreenState extends State<ViewerScreen> {
+  final Player _player = Player();
+  late final VideoController _controller = VideoController(_player);
+  final LiveStreamServer _stream = LiveStreamServer();
   ScrcpyServerClient? _client;
+
   VideoStreamInfo? _info;
   String? _error;
+  bool _showLog = false;
   final List<String> _logs = [];
-
   int _packets = 0;
-  int _keyFrames = 0;
-  int _bytes = 0;
-  double _fps = 0;
-  double _mbps = 0;
-
-  int _windowPackets = 0;
-  int _windowBytes = 0;
-  Timer? _rateTimer;
 
   @override
   void initState() {
     super.initState();
-    _rateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() {
-        _fps = _windowPackets.toDouble();
-        _mbps = _windowBytes * 8 / 1e6;
-        _windowPackets = 0;
-        _windowBytes = 0;
-      });
-    });
-    _connect();
+    _start();
   }
 
   @override
   void dispose() {
-    _rateTimer?.cancel();
     _client?.stop();
+    _stream.stop();
+    _player.dispose();
     super.dispose();
   }
 
@@ -76,26 +66,37 @@ class _ViewerScreenState extends State<ViewerScreen> {
     });
   }
 
-  Future<void> _connect() async {
-    final client = ScrcpyServerClient(
-      service: widget.service,
-      serial: widget.device.serial,
-      version: widget.version,
-      options: widget.options,
-      onInfo: (info) => setState(() => _info = info),
-      onPacket: (p) {
-        _packets++;
-        _bytes += p.data.length;
-        _windowPackets++;
-        _windowBytes += p.data.length;
-        if (p.isKeyFrame) _keyFrames++;
-      },
-      onLog: _log,
-      onError: (e) => setState(() => _error = e.toString()),
-      onClosed: () => _log('Connection closed.'),
-    );
-    _client = client;
+  Future<void> _start() async {
     try {
+      await _stream.start();
+
+      // Configure mpv for low-latency live playback of a raw H.264 stream.
+      final platform = _player.platform;
+      if (platform is NativePlayer) {
+        await platform.setProperty('profile', 'low-latency');
+        await platform.setProperty('cache', 'no');
+        await platform.setProperty('untimed', 'yes');
+      }
+
+      final client = ScrcpyServerClient(
+        service: widget.service,
+        serial: widget.device.serial,
+        version: widget.version,
+        options: widget.options,
+        onInfo: (info) {
+          setState(() => _info = info);
+          // Start playback once we know a stream is coming.
+          _player.open(Media(_stream.url), play: true);
+        },
+        onPacket: (p) {
+          _packets++;
+          _stream.addPacket(p);
+        },
+        onLog: _log,
+        onError: (e) => setState(() => _error = e.toString()),
+        onClosed: () => _log('Connection closed.'),
+      );
+      _client = client;
       await client.start();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -106,125 +107,80 @@ class _ViewerScreenState extends State<ViewerScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text('Viewer (beta) — ${widget.device.displayName}'),
+        title: Text('${widget.device.displayName} (beta)'),
+        actions: [
+          IconButton(
+            tooltip: 'Diagnostics',
+            icon: Icon(_showLog ? Icons.bug_report : Icons.bug_report_outlined),
+            onPressed: () => setState(() => _showLog = !_showLog),
+          ),
+        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _error != null
+                ? _errorView(theme)
+                : Video(controller: _controller, fit: BoxFit.contain),
+          ),
+          if (_showLog)
+            Positioned(
+              right: 12,
+              top: 12,
+              width: 360,
+              bottom: 12,
+              child: _diagnostics(theme),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _errorView(ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (_error != null)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.error.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(_error!),
-              ),
-            const SizedBox(height: 12),
-            _StatGrid(
-              info: _info,
-              packets: _packets,
-              keyFrames: _keyFrames,
-              bytes: _bytes,
-              fps: _fps,
-              mbps: _mbps,
-            ),
-            const SizedBox(height: 20),
-            Text('Log', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 6),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: ListView.builder(
-                  itemCount: _logs.length,
-                  itemBuilder: (_, i) => Text(
-                    _logs[i],
-                    style: const TextStyle(
-                        fontFamily: 'Consolas', fontSize: 12),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Phase 1: stream is being demuxed but not yet decoded. '
-              'Video rendering comes next.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: Colors.white.withValues(alpha: 0.5),
-              ),
-            ),
+            Icon(Icons.error_outline, size: 56, color: theme.colorScheme.error),
+            const SizedBox(height: 16),
+            Text(_error!, textAlign: TextAlign.center),
           ],
         ),
       ),
     );
   }
-}
 
-class _StatGrid extends StatelessWidget {
-  final VideoStreamInfo? info;
-  final int packets;
-  final int keyFrames;
-  final int bytes;
-  final double fps;
-  final double mbps;
-
-  const _StatGrid({
-    required this.info,
-    required this.packets,
-    required this.keyFrames,
-    required this.bytes,
-    required this.fps,
-    required this.mbps,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 16,
-      runSpacing: 16,
-      children: [
-        _stat(context, 'Status', info == null ? 'Connecting…' : 'Streaming'),
-        _stat(context, 'Codec', info?.codec ?? '—'),
-        _stat(context, 'Resolution',
-            info == null ? '—' : '${info!.width}×${info!.height}'),
-        _stat(context, 'Packets', '$packets'),
-        _stat(context, 'Key frames', '$keyFrames'),
-        _stat(context, 'FPS', fps.toStringAsFixed(0)),
-        _stat(context, 'Bitrate', '${mbps.toStringAsFixed(1)} Mbps'),
-        _stat(context, 'Total', '${(bytes / 1048576).toStringAsFixed(1)} MB'),
-      ],
-    );
-  }
-
-  Widget _stat(BuildContext context, String label, String value) {
-    final theme = Theme.of(context);
+  Widget _diagnostics(ThemeData theme) {
     return Container(
-      width: 150,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: Colors.black.withValues(alpha: 0.75),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: Colors.white.withValues(alpha: 0.5),
-              )),
-          const SizedBox(height: 6),
-          Text(value,
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700)),
+          Text(
+            _info == null
+                ? 'Connecting…'
+                : '${_info!.codec} ${_info!.width}×${_info!.height} · $_packets pkts',
+            style: theme.textTheme.labelMedium,
+          ),
+          const Divider(),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _logs.length,
+              itemBuilder: (_, i) => Text(
+                _logs[i],
+                style: const TextStyle(fontFamily: 'Consolas', fontSize: 11),
+              ),
+            ),
+          ),
         ],
       ),
     );
