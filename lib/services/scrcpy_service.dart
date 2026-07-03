@@ -216,6 +216,17 @@ class ScrcpyService {
     return devices;
   }
 
+  /// Absolute path to the adb executable, or null if not found.
+  Future<String?> adbPath() => _resolve('adb');
+
+  /// Absolute path to the bundled `scrcpy-server` jar (next to scrcpy), or null.
+  Future<String?> serverJarPath() async {
+    final exe = await _resolve('scrcpy');
+    if (exe == null) return null;
+    final jar = File('${File(exe).parent.path}/scrcpy-server');
+    return jar.existsSync() ? jar.path : null;
+  }
+
   /// Lists installed package names on [serial] via `adb shell pm list packages`.
   /// When [thirdPartyOnly] is true, system apps are excluded (`-3`).
   Future<List<String>> listPackages(

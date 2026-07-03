@@ -23,8 +23,13 @@ class LaunchOptionsDialog extends StatefulWidget {
   State<LaunchOptionsDialog> createState() => _LaunchOptionsDialogState();
 }
 
+/// Result of the launch dialog: the options and whether to use the in-app
+/// viewer (beta) instead of the standalone scrcpy window.
+typedef LaunchChoice = (MirrorOptions options, bool useViewer);
+
 class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
   late MirrorOptions _o = widget.initial;
+  bool _useViewer = false;
 
   final _resolutionController = TextEditingController();
   final _dpiController = TextEditingController();
@@ -69,7 +74,7 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
       startAppPackage: app.isEmpty ? null : app,
       clearStartApp: app.isEmpty,
     );
-    Navigator.of(context).pop(result);
+    Navigator.of(context).pop((result, _useViewer));
   }
 
   @override
@@ -239,6 +244,22 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
                   ),
                 ),
               ],
+              const SizedBox(height: 8),
+              _sectionLabel(theme, 'Experimental'),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Open in in-app viewer (beta)'),
+                subtitle: Text(
+                  'Stream inside SgfScrcpy instead of the scrcpy window.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.45),
+                  ),
+                ),
+                value: _useViewer,
+                onChanged: (v) => setState(() => _useViewer = v ?? false),
+              ),
             ],
           ),
         ),

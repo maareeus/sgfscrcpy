@@ -11,6 +11,7 @@ import '../services/scrcpy_service.dart';
 import '../services/scrcpy_updater.dart';
 import '../widgets/device_card.dart';
 import '../widgets/launch_options_dialog.dart';
+import 'viewer_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -224,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openLaunchDialog(Device device) async {
-    final options = await showDialog<MirrorOptions>(
+    final choice = await showDialog<LaunchChoice>(
       context: context,
       builder: (_) => LaunchOptionsDialog(
         device: device,
@@ -233,8 +234,23 @@ class _HomeScreenState extends State<HomeScreen> {
             _service.listPackages(device.serial, thirdPartyOnly: thirdPartyOnly),
       ),
     );
-    if (options == null) return; // cancelled
+    if (choice == null) return; // cancelled
+    final (options, useViewer) = choice;
     _lastOptions[device.serial] = options;
+
+    if (useViewer) {
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ViewerScreen(
+          service: _service,
+          device: device,
+          version: ScrcpyUpdater.normalizeVersion(_env?.scrcpyVersion) ?? '3.0',
+          options: options,
+        ),
+      ));
+      return;
+    }
+
     await _launch(device, options);
   }
 
