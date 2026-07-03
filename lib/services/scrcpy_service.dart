@@ -216,6 +216,97 @@ class ScrcpyService {
     return devices;
   }
 
+  /// Ensures the adb daemon is running before any `Process.run(adb ...)` call.
+  ///
+  /// On Windows, letting an adb client auto-start the daemon hangs Dart's
+  /// `Process.run` forever: the forked daemon inherits the stdout pipe so it
+  /// never reaches EOF. We start it detached (no inherited pipes) and wait for
+  /// port 5037 to accept connections.
+  Future<void> ensureAdbServer() async {
+    final adb = await _resolve('adb');
+    if (adb == null) return;
+
+    if (Platform.isWindows) {
+      win.launchNoWindow(adb, ['start-server']);
+    } else {
+      await Process.run(adb, ['start-server'], runInShell: false);
+      return;
+    }
+
+    for (var i = 0; i < 50; i++) {
+      try {
+        final s = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          5037,
+          timeout: const Duration(milliseconds: 200),
+        );
+        await s.close();
+        return;
+      } catch (_) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    }
+  }
+
+  /// Connects to a wireless device at `host:port` (`adb connect`).
+  Future<String> connectWireless(String hostPort) async {
+    await ensureAdbServer();
+    final result = await _run('adb', ['connect', hostPort]);
+    final out = '${result.stdout}${result.stderr}'.trim();
+    if (out.toLowerCase().contains('cannot') ||
+        out.toLowerCase().contains('failed') ||
+        out.toLowerCase().contains('unable')) {
+      throw ScrcpyException('Connection failed.', details: out);
+    }
+    return out;
+  }
+
+  /// Pairs with an Android 11+ device using its Wireless-debugging pairing
+  /// `host:port` and 6-digit code (`adb pair`).
+  Future<String> pairWireless(String hostPort, String code) async {
+    await ensureAdbServer();
+    final result = await _run('adb', ['pair', hostPort, code]);
+    final out = '${result.stdout}${result.stderr}'.trim();
+    if (!out.toLowerCase().contains('successfully')) {
+      throw ScrcpyException('Pairing failed.', details: out);
+    }
+    return out;
+  }
+
+  /// Disconnects a wireless device (`adb disconnect`).
+  Future<void> disconnectWireless(String hostPort) async {
+    await _run('adb', ['disconnect', hostPort]);
+  }
+
+  /// Switches a USB-connected [device] to wireless: enables TCP/IP mode,
+  /// discovers its Wi-Fi IP and connects to it. Returns the `host:port`.
+  Future<String> enableWirelessFromUsb(Device device) async {
+    // Read the Wi-Fi IP while still on USB.
+    final ipResult = await _run(
+      'adb',
+      ['-s', device.serial, 'shell', 'ip', '-o', '-4', 'addr', 'show', 'wlan0'],
+    );
+    final match =
+        RegExp(r'inet (\d+\.\d+\.\d+\.\d+)').firstMatch(ipResult.stdout.toString());
+    if (match == null) {
+      throw ScrcpyException(
+        'Could not find the device Wi-Fi IP. Is Wi-Fi on?',
+        details: ipResult.stdout.toString().trim(),
+      );
+    }
+    final ip = match.group(1)!;
+
+    final tcpip = await _run('adb', ['-s', device.serial, 'tcpip', '5555']);
+    if (tcpip.exitCode != 0) {
+      throw ScrcpyException('Failed to enable TCP/IP mode.',
+          details: tcpip.stderr.toString().trim());
+    }
+
+    // adbd restarts in TCP mode; give it a moment before connecting.
+    await Future.delayed(const Duration(milliseconds: 1500));
+    return connectWireless('$ip:5555');
+  }
+
   /// Lists installed package names on [serial] via `adb shell pm list packages`.
   /// When [thirdPartyOnly] is true, system apps are excluded (`-3`).
   Future<List<String>> listPackages(

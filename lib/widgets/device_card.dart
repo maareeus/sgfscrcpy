@@ -13,12 +13,16 @@ class DeviceCard extends StatefulWidget {
   /// Called when the user stops an active session.
   final VoidCallback onStop;
 
+  /// Called to switch a USB device to wireless; null hides the action.
+  final VoidCallback? onEnableWireless;
+
   const DeviceCard({
     super.key,
     required this.device,
     required this.onLaunch,
     required this.mirroring,
     required this.onStop,
+    this.onEnableWireless,
   });
 
   @override
@@ -112,6 +116,18 @@ class _DeviceCardState extends State<DeviceCard> {
                         ),
                       ),
                       const Spacer(),
+                      if (widget.onEnableWireless != null)
+                        IconButton(
+                          onPressed: widget.onEnableWireless,
+                          tooltip: 'Switch to Wi-Fi',
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            Icons.wifi,
+                            size: 20,
+                            color: Colors.white.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      const SizedBox(width: 4),
                       _StatusDot(color: _statusColor),
                     ],
                   ),

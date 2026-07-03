@@ -11,6 +11,7 @@ import '../services/scrcpy_service.dart';
 import '../services/scrcpy_updater.dart';
 import '../widgets/device_card.dart';
 import '../widgets/launch_options_dialog.dart';
+import '../widgets/wireless_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -58,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _bootstrap() async {
+    await _service.ensureAdbServer();
     await _service.loadPersistedPath();
     if (!Platform.isWindows) {
       _packageManager = await _service.detectPackageManager();
@@ -223,6 +225,30 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _openWirelessDialog() async {
+    final connected = await showDialog<bool>(
+      context: context,
+      builder: (_) => WirelessDialog(service: _service),
+    );
+    if (connected == true) await _refresh();
+  }
+
+  Future<void> _enableWireless(Device device) async {
+    _showSnack('Enabling Wi-Fi for ${device.displayName}…');
+    try {
+      final hostPort = await _service.enableWirelessFromUsb(device);
+      if (!mounted) return;
+      _showSnack('Connected at $hostPort — you can unplug the cable');
+      await _refresh();
+    } on ScrcpyException catch (e) {
+      if (!mounted) return;
+      _showSnack(
+        e.details == null ? e.message : '${e.message} (${e.details})',
+        isError: true,
+      );
+    }
+  }
+
   Future<void> _openLaunchDialog(Device device) async {
     final options = await showDialog<MirrorOptions>(
       context: context,
@@ -290,6 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 env: _env,
                 loading: _loading,
                 onRefresh: _loading ? null : _refresh,
+                onWireless: _openWirelessDialog,
               ),
               if (_updateAvailable && _latest != null) ...[
                 const SizedBox(height: 18),
@@ -373,6 +400,10 @@ class _HomeScreenState extends State<HomeScreen> {
               mirroring: _sessions.containsKey(device.serial),
               onLaunch: () => _openLaunchDialog(device),
               onStop: () => _stop(device),
+              onEnableWireless:
+                  device.isReady && !device.isWireless
+                      ? () => _enableWireless(device)
+                      : null,
             ),
         ],
       ),
@@ -384,8 +415,14 @@ class _Header extends StatelessWidget {
   final EnvironmentStatus? env;
   final bool loading;
   final VoidCallback? onRefresh;
+  final VoidCallback? onWireless;
 
-  const _Header({required this.env, required this.loading, this.onRefresh});
+  const _Header({
+    required this.env,
+    required this.loading,
+    this.onRefresh,
+    this.onWireless,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -426,6 +463,12 @@ class _Header extends StatelessWidget {
           ],
         ),
         const Spacer(),
+        OutlinedButton.icon(
+          onPressed: onWireless,
+          icon: const Icon(Icons.wifi, size: 18),
+          label: const Text('Wi-Fi'),
+        ),
+        const SizedBox(width: 12),
         FilledButton.tonalIcon(
           onPressed: onRefresh,
           icon: loading
