@@ -193,8 +193,8 @@ class ScrcpyServerClient {
   Future<void> _readHandshakeAndStream() async {
     final reader = _ByteReader(_videoSocket!);
 
-    // Dummy byte sent to detect early connection errors.
-    await reader.readExactly(1);
+    // Note: no dummy byte in this configuration — the stream starts straight
+    // at the device name. Reading one here shifts everything by a byte.
 
     // 64-byte device name (null-padded).
     final nameBytes = await reader.readExactly(64);
