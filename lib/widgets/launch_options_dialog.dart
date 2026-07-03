@@ -56,6 +56,21 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
     }
   }
 
+  /// Applies a tablet-friendly virtual display: 1080p at 240 DPI (≈720dp wide,
+  /// which triggers large-screen/two-pane layouts) with a UHID keyboard.
+  void _applyTabletPreset() {
+    setState(() {
+      _o = _o.copyWith(
+        virtualDisplay: true,
+        virtualDisplayResolution: '1920x1080',
+        virtualDisplayDpi: 240,
+        keyboardMode: 'uhid',
+      );
+      _resolutionController.text = '1920x1080';
+      _dpiController.text = '240';
+    });
+  }
+
   void _start() {
     // Fold text fields into the options.
     final res = _resolutionController.text.trim();
@@ -178,6 +193,15 @@ class _LaunchOptionsDialogState extends State<LaunchOptionsDialog> {
                 'Runs a separate Android screen (scrcpy 3.0+, Android 11+).',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.white.withValues(alpha: 0.45),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ActionChip(
+                  avatar: const Icon(Icons.tablet_mac, size: 18),
+                  label: const Text('Tablet preset (1080p · 240dpi)'),
+                  onPressed: _applyTabletPreset,
                 ),
               ),
               _switch(
