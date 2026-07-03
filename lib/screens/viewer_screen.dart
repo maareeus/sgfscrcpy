@@ -33,10 +33,13 @@ class ViewerScreen extends StatefulWidget {
 }
 
 class _ViewerScreenState extends State<ViewerScreen> {
-  final Player _player = Player();
+  final Player _player = Player(
+    configuration: const PlayerConfiguration(logLevel: MPVLogLevel.warn),
+  );
   late final VideoController _controller = VideoController(_player);
   final LiveStreamServer _stream = LiveStreamServer();
   ScrcpyServerClient? _client;
+  StreamSubscription? _logSub;
 
   VideoStreamInfo? _info;
   String? _error;
@@ -52,6 +55,7 @@ class _ViewerScreenState extends State<ViewerScreen> {
 
   @override
   void dispose() {
+    _logSub?.cancel();
     _client?.stop();
     _stream.stop();
     _player.dispose();
@@ -70,12 +74,19 @@ class _ViewerScreenState extends State<ViewerScreen> {
     try {
       await _stream.start();
 
-      // Configure mpv for low-latency live playback of a raw H.264 stream.
+      _logSub = _player.stream.log.listen((l) => _log('[mpv] ${l.text}'));
+
+      // Configure mpv for low-latency live playback of a raw H.264 elementary
+      // stream (no container, so force the demuxer and minimize probing).
       final platform = _player.platform;
       if (platform is NativePlayer) {
         await platform.setProperty('profile', 'low-latency');
         await platform.setProperty('cache', 'no');
         await platform.setProperty('untimed', 'yes');
+        await platform.setProperty('demuxer', 'lavf');
+        await platform.setProperty('demuxer-lavf-format', 'h264');
+        await platform.setProperty('demuxer-lavf-o', 'probesize=32');
+        await platform.setProperty('video-latency-hacks', 'yes');
       }
 
       final client = ScrcpyServerClient(
