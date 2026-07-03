@@ -93,12 +93,16 @@ class ScrcpyServerClient {
       throw ScrcpyException('scrcpy-server jar not found next to scrcpy.');
     }
 
+    await service.ensureAdbServer();
+
     onLog?.call('Pushing server ($version)…');
     final push = await Process.run(
       _adb!,
       ['-s', serial, 'push', jar, _deviceJarPath],
       runInShell: false,
-    );
+    ).timeout(const Duration(seconds: 15), onTimeout: () {
+      throw ScrcpyException('adb push timed out.');
+    });
     if (push.exitCode != 0) {
       throw ScrcpyException('adb push failed.',
           details: push.stderr.toString().trim());
@@ -113,7 +117,9 @@ class ScrcpyServerClient {
       _adb!,
       ['-s', serial, 'reverse', 'localabstract:$_socketName', 'tcp:$port'],
       runInShell: false,
-    );
+    ).timeout(const Duration(seconds: 10), onTimeout: () {
+      throw ScrcpyException('adb reverse timed out.');
+    });
     if (reverse.exitCode != 0) {
       throw ScrcpyException('adb reverse failed.',
           details: reverse.stderr.toString().trim());

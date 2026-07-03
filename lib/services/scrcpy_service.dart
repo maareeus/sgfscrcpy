@@ -219,6 +219,38 @@ class ScrcpyService {
   /// Absolute path to the adb executable, or null if not found.
   Future<String?> adbPath() => _resolve('adb');
 
+  /// Ensures the adb daemon is running before any `Process.run(adb ...)` call.
+  ///
+  /// On Windows, letting an adb client auto-start the daemon hangs Dart's
+  /// `Process.run` forever: the forked daemon inherits the stdout pipe so it
+  /// never reaches EOF. We start it detached (no inherited pipes) and wait for
+  /// port 5037 to accept connections.
+  Future<void> ensureAdbServer() async {
+    final adb = await _resolve('adb');
+    if (adb == null) return;
+
+    if (Platform.isWindows) {
+      win.launchNoWindow(adb, ['start-server']);
+    } else {
+      await Process.run(adb, ['start-server'], runInShell: false);
+      return;
+    }
+
+    for (var i = 0; i < 50; i++) {
+      try {
+        final s = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          5037,
+          timeout: const Duration(milliseconds: 200),
+        );
+        await s.close();
+        return;
+      } catch (_) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    }
+  }
+
   /// Absolute path to the bundled `scrcpy-server` jar (next to scrcpy), or null.
   Future<String?> serverJarPath() async {
     final exe = await _resolve('scrcpy');

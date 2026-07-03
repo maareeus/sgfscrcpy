@@ -59,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _bootstrap() async {
+    await _service.ensureAdbServer();
     await _service.loadPersistedPath();
     if (!Platform.isWindows) {
       _packageManager = await _service.detectPackageManager();
