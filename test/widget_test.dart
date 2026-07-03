@@ -1,8 +1,50 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sgf_scrcpy/models/device.dart';
+import 'package:sgf_scrcpy/models/mirror_options.dart';
 
 void main() {
+  group('MirrorOptions.toArgs', () {
+    test('defaults only pass the serial', () {
+      expect(MirrorOptions.defaults.toArgs('ABC'), ['--serial', 'ABC']);
+    });
+
+    test('maps video and behavior options to flags', () {
+      const o = MirrorOptions(
+        maxSize: 1024,
+        videoBitrateMbps: 8,
+        maxFps: 60,
+        fullscreen: true,
+        stayAwake: true,
+        audioEnabled: false,
+      );
+      final args = o.toArgs('ABC');
+      expect(args, containsAllInOrder(['--max-size', '1024']));
+      expect(args, containsAllInOrder(['--video-bit-rate', '8M']));
+      expect(args, containsAllInOrder(['--max-fps', '60']));
+      expect(args, contains('--fullscreen'));
+      expect(args, contains('--stay-awake'));
+      expect(args, contains('--no-audio'));
+    });
+
+    test('virtual display with resolution, dpi and start app', () {
+      const o = MirrorOptions(
+        virtualDisplay: true,
+        virtualDisplayResolution: '1920x1080',
+        virtualDisplayDpi: 240,
+        startAppPackage: 'com.android.chrome',
+      );
+      final args = o.toArgs('ABC');
+      expect(args, contains('--new-display=1920x1080/240'));
+      expect(args, contains('--start-app=com.android.chrome'));
+    });
+
+    test('virtual display with no resolution uses bare flag', () {
+      const o = MirrorOptions(virtualDisplay: true);
+      expect(o.toArgs('ABC'), contains('--new-display'));
+    });
+  });
+
   group('Device.parseLine', () {
     test('parses a ready device with model and product', () {
       final device = Device.parseLine(

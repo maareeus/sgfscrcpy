@@ -6,9 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/device.dart';
+import '../models/mirror_options.dart';
 import '../services/scrcpy_service.dart';
 import '../services/scrcpy_updater.dart';
 import '../widgets/device_card.dart';
+import '../widgets/launch_options_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,6 +30,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Serial -> OS pid of scrcpy sessions this app launched.
   final Map<String, int> _sessions = {};
+
+  /// Serial -> last options used, so the dialog remembers per-device choices.
+  final Map<String, MirrorOptions> _lastOptions = {};
 
   /// Watches launched sessions so cards reset when the user closes scrcpy.
   Timer? _livenessTimer;
@@ -218,9 +223,22 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _launch(Device device) async {
+  Future<void> _openLaunchDialog(Device device) async {
+    final options = await showDialog<MirrorOptions>(
+      context: context,
+      builder: (_) => LaunchOptionsDialog(
+        device: device,
+        initial: _lastOptions[device.serial] ?? MirrorOptions.defaults,
+      ),
+    );
+    if (options == null) return; // cancelled
+    _lastOptions[device.serial] = options;
+    await _launch(device, options);
+  }
+
+  Future<void> _launch(Device device, MirrorOptions options) async {
     try {
-      final pid = await _service.startMirror(device);
+      final pid = await _service.startMirror(device, options);
       if (!mounted) return;
       setState(() => _sessions[device.serial] = pid);
       _showSnack('Mirroring ${device.displayName}…');
@@ -351,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
             DeviceCard(
               device: device,
               mirroring: _sessions.containsKey(device.serial),
-              onLaunch: () => _launch(device),
+              onLaunch: () => _openLaunchDialog(device),
               onStop: () => _stop(device),
             ),
         ],

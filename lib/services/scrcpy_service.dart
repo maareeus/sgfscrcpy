@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/device.dart';
+import '../models/mirror_options.dart';
 import 'win_process.dart' as win;
 
 /// A detected OS package manager that can install scrcpy.
@@ -218,7 +219,7 @@ class ScrcpyService {
   /// Launches scrcpy for [device] as a detached process (no console window,
   /// survives GUI close). Returns the OS process id so the caller can track
   /// and later stop the session. Throws [ScrcpyException] on failure.
-  Future<int> startMirror(Device device) async {
+  Future<int> startMirror(Device device, [MirrorOptions? options]) async {
     if (!device.isReady) {
       throw ScrcpyException(
         'Device "${device.displayName}" is not ready (${device.statusLabel}).',
@@ -228,7 +229,7 @@ class ScrcpyService {
     if (exe == null) {
       throw ScrcpyException('"scrcpy" not found on PATH.');
     }
-    final args = ['--serial', device.serial];
+    final args = (options ?? MirrorOptions.defaults).toArgs(device.serial);
 
     if (Platform.isWindows) {
       // Launch via Win32 CreateProcess with CREATE_NO_WINDOW so no console
