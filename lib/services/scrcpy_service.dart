@@ -264,6 +264,27 @@ class ScrcpyService {
     }
   }
 
+  /// Lists the reverse mappings currently active in adb for [serial].
+  /// Returns rules built from `adb reverse --list` output.
+  Future<List<ReverseRule>> listReverse(String serial) async {
+    await ensureAdbServer();
+    final result = await _run('adb', ['-s', serial, 'reverse', '--list']);
+    if (result.exitCode != 0) return const [];
+    final rules = <ReverseRule>[];
+    // Lines look like: `<serial> tcp:<devicePort> tcp:<pcPort>`
+    final pattern = RegExp(r'tcp:(\d+)\s+tcp:(\d+)');
+    for (final line in result.stdout.toString().split('\n')) {
+      final match = pattern.firstMatch(line);
+      if (match != null) {
+        rules.add(ReverseRule(
+          int.parse(match.group(1)!),
+          int.parse(match.group(2)!),
+        ));
+      }
+    }
+    return rules;
+  }
+
   /// Removes a single reverse mapping by its device port.
   Future<void> removeReverse(String serial, ReverseRule rule) async {
     await _run(

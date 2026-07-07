@@ -280,6 +280,8 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) => ReversePortsDialog(
         device: device,
         initial: _reverseStore.rulesFor(device.serial),
+        onLoadActive: () => _service.listReverse(device.serial),
+        onReapply: (rule) => _service.applyReverse(device.serial, rule),
       ),
     );
     if (result == null) return;
