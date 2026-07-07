@@ -32,16 +32,40 @@ class _ReversePortsDialogState extends State<ReversePortsDialog> {
     super.dispose();
   }
 
-  void _add() {
-    final device = int.tryParse(_deviceController.text.trim());
-    final pc = int.tryParse(_pcController.text.trim());
-    if (device == null || pc == null || device <= 0 || pc <= 0) return;
+  /// Adds the rule currently typed in the fields, if valid. Returns false when
+  /// the fields hold partial/invalid input that shouldn't be silently dropped.
+  bool _commitPending() {
+    final deviceText = _deviceController.text.trim();
+    final pcText = _pcController.text.trim();
+    if (deviceText.isEmpty && pcText.isEmpty) return true; // nothing pending
+    final device = int.tryParse(deviceText);
+    final pc = int.tryParse(pcText);
+    if (device == null || pc == null || device <= 0 || pc <= 0) return false;
     setState(() {
       _rules.removeWhere((r) => r.devicePort == device); // one rule per port
       _rules.add(ReverseRule(device, pc));
       _deviceController.clear();
       _pcController.clear();
     });
+    return true;
+  }
+
+  void _add() {
+    if (!_commitPending()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter both a device port and a PC port')),
+      );
+    }
+  }
+
+  void _save() {
+    if (!_commitPending()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter both a device port and a PC port')),
+      );
+      return;
+    }
+    Navigator.of(context).pop(_rules);
   }
 
   @override
@@ -145,7 +169,7 @@ class _ReversePortsDialogState extends State<ReversePortsDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(_rules),
+          onPressed: _save,
           child: const Text('Save & apply'),
         ),
       ],

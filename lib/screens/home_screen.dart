@@ -298,7 +298,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     await _reverseStore.setRules(device.serial, result);
     _reverseApplied.add(device.serial);
-    if (mounted) _showSnack('Reverse ports saved (${result.length})');
+    if (mounted) {
+      setState(() {}); // refresh the card's rule-count badge
+      _showSnack('Reverse ports saved (${result.length})');
+    }
   }
 
   Future<void> _openLaunchDialog(Device device) async {
