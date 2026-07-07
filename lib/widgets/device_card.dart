@@ -16,6 +16,12 @@ class DeviceCard extends StatefulWidget {
   /// Called to switch a USB device to wireless; null hides the action.
   final VoidCallback? onEnableWireless;
 
+  /// Called to edit persistent adb reverse rules; null hides the action.
+  final VoidCallback? onReversePorts;
+
+  /// Number of configured reverse rules (shown as a small badge).
+  final int reverseCount;
+
   const DeviceCard({
     super.key,
     required this.device,
@@ -23,6 +29,8 @@ class DeviceCard extends StatefulWidget {
     required this.mirroring,
     required this.onStop,
     this.onEnableWireless,
+    this.onReversePorts,
+    this.reverseCount = 0,
   });
 
   @override
@@ -116,6 +124,21 @@ class _DeviceCardState extends State<DeviceCard> {
                         ),
                       ),
                       const Spacer(),
+                      if (widget.onReversePorts != null)
+                        IconButton(
+                          onPressed: widget.onReversePorts,
+                          tooltip: widget.reverseCount > 0
+                              ? 'Reverse ports (${widget.reverseCount})'
+                              : 'Reverse ports',
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            Icons.settings_ethernet,
+                            size: 20,
+                            color: widget.reverseCount > 0
+                                ? theme.colorScheme.primary
+                                : Colors.white.withValues(alpha: 0.55),
+                          ),
+                        ),
                       if (widget.onEnableWireless != null)
                         IconButton(
                           onPressed: widget.onEnableWireless,

@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/device.dart';
 import '../models/mirror_options.dart';
+import '../models/reverse_rule.dart';
 import 'win_process.dart' as win;
 
 /// A detected OS package manager that can install scrcpy.
@@ -246,6 +247,29 @@ class ScrcpyService {
         await Future.delayed(const Duration(milliseconds: 100));
       }
     }
+  }
+
+  /// Applies an `adb reverse tcp:<devicePort> tcp:<pcPort>` mapping (idempotent).
+  Future<void> applyReverse(String serial, ReverseRule rule) async {
+    await ensureAdbServer();
+    final result = await _run('adb', [
+      '-s', serial,
+      'reverse', 'tcp:${rule.devicePort}', 'tcp:${rule.pcPort}',
+    ]);
+    if (result.exitCode != 0) {
+      throw ScrcpyException(
+        'Failed to set reverse tcp:${rule.devicePort}.',
+        details: result.stderr.toString().trim(),
+      );
+    }
+  }
+
+  /// Removes a single reverse mapping by its device port.
+  Future<void> removeReverse(String serial, ReverseRule rule) async {
+    await _run(
+      'adb',
+      ['-s', serial, 'reverse', '--remove', 'tcp:${rule.devicePort}'],
+    );
   }
 
   /// Connects to a wireless device at `host:port` (`adb connect`).

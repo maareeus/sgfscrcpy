@@ -7,10 +7,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/device.dart';
 import '../models/mirror_options.dart';
+import '../models/reverse_rule.dart';
+import '../services/reverse_config.dart';
 import '../services/scrcpy_service.dart';
 import '../services/scrcpy_updater.dart';
 import '../widgets/device_card.dart';
 import '../widgets/launch_options_dialog.dart';
+import '../widgets/reverse_ports_dialog.dart';
 import '../widgets/wireless_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -23,6 +26,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final ScrcpyService _service = ScrcpyService();
   final ScrcpyUpdater _updater = ScrcpyUpdater();
+  final ReverseConfigStore _reverseStore = ReverseConfigStore();
+
+  /// Serials whose persisted reverse rules were already applied this session.
+  final Set<String> _reverseApplied = {};
 
   bool _loading = true;
   EnvironmentStatus? _env;
@@ -61,6 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _bootstrap() async {
     await _service.ensureAdbServer();
     await _service.loadPersistedPath();
+    await _reverseStore.load();
     if (!Platform.isWindows) {
       _packageManager = await _service.detectPackageManager();
     }
@@ -204,11 +212,13 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       final liveSerials = devices.map((d) => d.serial).toSet();
       _sessions.removeWhere((serial, _) => !liveSerials.contains(serial));
+      _reverseApplied.removeWhere((s) => !liveSerials.contains(s));
       setState(() {
         _env = env;
         _devices = devices;
         _loading = false;
       });
+      _applyReverseRules(devices);
       _checkForUpdate();
     } on ScrcpyException catch (e) {
       if (!mounted) return;
@@ -247,6 +257,48 @@ class _HomeScreenState extends State<HomeScreen> {
         isError: true,
       );
     }
+  }
+
+  /// Reapplies persisted reverse rules for freshly connected ready devices.
+  Future<void> _applyReverseRules(List<Device> devices) async {
+    for (final device in devices) {
+      if (!device.isReady || _reverseApplied.contains(device.serial)) continue;
+      final rules = _reverseStore.rulesFor(device.serial);
+      if (rules.isEmpty) continue;
+      for (final rule in rules) {
+        try {
+          await _service.applyReverse(device.serial, rule);
+        } catch (_) {}
+      }
+      _reverseApplied.add(device.serial);
+    }
+  }
+
+  Future<void> _openReverseDialog(Device device) async {
+    final result = await showDialog<List<ReverseRule>>(
+      context: context,
+      builder: (_) => ReversePortsDialog(
+        device: device,
+        initial: _reverseStore.rulesFor(device.serial),
+      ),
+    );
+    if (result == null) return;
+
+    final previous = _reverseStore.rulesFor(device.serial).toSet();
+    final current = result.toSet();
+    for (final removed in previous.difference(current)) {
+      try {
+        await _service.removeReverse(device.serial, removed);
+      } catch (_) {}
+    }
+    for (final rule in current) {
+      try {
+        await _service.applyReverse(device.serial, rule);
+      } catch (_) {}
+    }
+    await _reverseStore.setRules(device.serial, result);
+    _reverseApplied.add(device.serial);
+    if (mounted) _showSnack('Reverse ports saved (${result.length})');
   }
 
   Future<void> _openLaunchDialog(Device device) async {
@@ -404,6 +456,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   device.isReady && !device.isWireless
                       ? () => _enableWireless(device)
                       : null,
+              onReversePorts:
+                  device.isReady ? () => _openReverseDialog(device) : null,
+              reverseCount: _reverseStore.rulesFor(device.serial).length,
             ),
         ],
       ),
